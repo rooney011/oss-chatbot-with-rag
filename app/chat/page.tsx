@@ -22,7 +22,6 @@ import {
   PromptInputBody,
   PromptInputButton,
   PromptInputHeader,
-  type PromptInputMessage,
   PromptInputSelect,
   PromptInputSelectContent,
   PromptInputSelectItem,
@@ -49,44 +48,43 @@ import {
 } from '@/components/ai-elements/reasoning';
 import { Loader } from '@/components/ai-elements/loader';
 const models = [
-  {
-    name: 'GPT 4o',
-    value: 'openai/gpt-4o',
-  },
-  {
-    name: 'Deepseek R1',
-    value: 'deepseek/deepseek-r1',
-  },
-  {
-    name: 'Gemini Pro',
-    value: 'google/gemini-pro',
-  },
+  { name: 'Gemini (flash)', value: 'gemini' },
+  { name: 'Gemini (lite)', value: 'gemini_flash_lite' },
+  { name: 'Gemini (pro)', value: 'gemini_pro' },
+  { name: 'GPT-4 Turbo', value: 'openai' },
+  { name: 'Claude 3.5', value: 'claude' },
 ];
+
 const ChatBotDemo = () => {
+  const [model, setModel] = useState(models[0].value);
   const [input, setInput] = useState('');
-  const [model, setModel] = useState<string>(models[0].value);
   const [webSearch, setWebSearch] = useState(false);
-  const { messages, sendMessage, status, regenerate } = useChat();
-  const handleSubmit = (message: PromptInputMessage) => {
-    const hasText = Boolean(message.text);
-    const hasAttachments = Boolean(message.files?.length);
-    if (!(hasText || hasAttachments)) {
-      return;
-    }
-    sendMessage(
-      { 
-        text: message.text || 'Sent with attachments',
-        files: message.files 
+
+  const { messages, sendMessage, status, regenerate } = useChat({});
+
+  const handleSubmit = async (message?: { text?: string }, e?: React.FormEvent<HTMLFormElement>) => {
+    e?.preventDefault();
+    const text = message?.text ?? input;
+    if (!text?.trim()) return;
+
+    await sendMessage(
+      {
+        text,
       },
       {
         body: {
-          model: model,
-          webSearch: webSearch,
+          modelKey: model,
+          webSearch,
         },
-      },
+      }
     );
     setInput('');
   };
+
+  function handleInputChange(event: React.ChangeEvent<HTMLTextAreaElement>): void {
+    setInput(event.target.value);
+  }
+
   return (
     <div className="max-w-4xl mx-auto p-6 relative size-full h-screen">
       <div className="flex flex-col h-full">
@@ -124,7 +122,7 @@ const ChatBotDemo = () => {
                               {part.text}
                             </MessageResponse>
                           </MessageContent>
-                          {message.role === 'assistant' && i === messages.length - 1 && (
+                          {message.role === 'assistant' && i === message.parts.length - 1 && (
                             <MessageActions>
                               <MessageAction
                                 onClick={() => regenerate()}
@@ -165,7 +163,12 @@ const ChatBotDemo = () => {
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
-        <PromptInput onSubmit={handleSubmit} className="mt-4" globalDrop multiple>
+        <PromptInput 
+          onSubmit={handleSubmit} 
+          className="mt-4" 
+          globalDrop 
+          multiple
+        >
           <PromptInputHeader>
             <PromptInputAttachments>
               {(attachment) => <PromptInputAttachment data={attachment} />}
@@ -173,7 +176,7 @@ const ChatBotDemo = () => {
           </PromptInputHeader>
           <PromptInputBody>
             <PromptInputTextarea
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               value={input}
             />
           </PromptInputBody>
@@ -210,11 +213,12 @@ const ChatBotDemo = () => {
                 </PromptInputSelectContent>
               </PromptInputSelect>
             </PromptInputTools>
-            <PromptInputSubmit disabled={!input && !status} status={status} />
+            <PromptInputSubmit disabled={!input} status={status} />
           </PromptInputFooter>
         </PromptInput>
       </div>
     </div>
   );
 };
+
 export default ChatBotDemo;

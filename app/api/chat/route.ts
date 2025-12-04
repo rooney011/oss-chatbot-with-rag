@@ -1,25 +1,23 @@
-import { streamText, UIMessage, convertToModelMessages } from 'ai';
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
-export async function POST(req: Request) {
-  const {
-    messages,
+import { streamText, convertToModelMessages } from 'ai';
+import { providers } from './provider';
+import { NextRequest } from 'next/server';
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const { messages, modelKey } = body;
+
+  const model = providers[modelKey as keyof typeof providers];
+  if (!model) {
+    return new Response(JSON.stringify({ error: 'Unknown modelKey' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const result = await streamText({
     model,
-    webSearch,
-  }: { 
-    messages: UIMessage[]; 
-    model: string; 
-    webSearch: boolean;
-  } = await req.json();
-  const result = streamText({
-    model: webSearch ? 'perplexity/sonar' : model,
     messages: convertToModelMessages(messages),
-    system:
-      'You are a helpful assistant that can answer questions and help with tasks',
   });
-  // send sources and reasoning back to the client
-  return result.toUIMessageStreamResponse({
-    sendSources: true,
-    sendReasoning: true,
-  });
+
+  return result.toUIMessageStreamResponse();
 }
