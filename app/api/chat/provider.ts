@@ -3,8 +3,9 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { google } from '@ai-sdk/google';
 
 export const providers = {
-  openai: openai('gpt-4-turbo'),
+  openai: openai('gpt-4o-mini'),
   claude: anthropic('claude-3-5-sonnet-20241022'),
-  gemini: google('gemini-2.0-flash'),
-  gemini_pro: google('gemini-2.0-flash-lite'),
+  gemini: google('gemini-2.5-flash'),
+  gemini_flash_lite: google('gemini-2.5-flash-lite'),
+  gemini_pro: google('gemini-2.5-pro'),
 };

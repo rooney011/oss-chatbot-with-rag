@@ -1,14 +1,14 @@
 "use client";
 
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
+import { ChatHistorySidebar } from "@/components/chat/ChatHistorySidebar"
 
 export default function ChatSidebar() {
   return (
 
     <SidebarProvider>
-      <AppSidebar />
-        <SidebarTrigger />
+      <ChatHistorySidebar />
+      <SidebarTrigger />
     </SidebarProvider>
   )
 }

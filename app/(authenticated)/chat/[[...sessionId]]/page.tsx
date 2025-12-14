@@ -32,9 +32,10 @@ import {
   PromptInputFooter,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { CopyIcon, GlobeIcon, RefreshCcwIcon } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Source,
   Sources,
@@ -47,6 +48,8 @@ import {
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning';
 import { Loader } from '@/components/ai-elements/loader';
+import { useParams, useRouter } from 'next/navigation';
+
 const models = [
   { name: 'Gemini (flash)', value: 'gemini' },
   { name: 'Gemini (lite)', value: 'gemini_flash_lite' },
@@ -56,25 +59,71 @@ const models = [
 ];
 
 const ChatBotDemo = () => {
+  const params = useParams();
+  const router = useRouter();
+  const sessionId = params.sessionId?.[0]; // Get first item from catch-all route
+
   const [model, setModel] = useState(models[0].value);
   const [input, setInput] = useState('');
   const [webSearch, setWebSearch] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(!!sessionId);
 
-  const { messages, sendMessage, status, regenerate } = useChat({});
+  // Initialize useChat - attachments are handled automatically by PromptInput components
+  const { messages, setMessages, sendMessage, status, regenerate } = useChat({});
 
-  const handleSubmit = async (message?: { text?: string }, e?: React.FormEvent<HTMLFormElement>) => {
+  // Load existing messages for conversation context
+  useEffect(() => {
+    if (!sessionId) {
+      setIsLoadingMessages(false);
+      return;
+    }
+
+    const loadMessages = async () => {
+      try {
+        const response = await fetch(`/api/messages?sessionId=${sessionId}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Convert database messages to AI SDK format with parts array
+          const formattedMessages = data.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            parts: [
+              {
+                type: 'text',
+                text: msg.content,
+              }
+            ],
+          }));
+          // setMessages includes these in conversation context for AI
+          setMessages(formattedMessages);
+        }
+      } catch (error) {
+        console.error('Error loading messages:', error);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    };
+
+    loadMessages();
+  }, [sessionId, setMessages]);
+
+  const handleSubmit = async (message?: { text?: string; files?: any[] }, e?: React.FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     const text = message?.text ?? input;
-    if (!text?.trim()) return;
+    const files = message?.files ?? [];
+
+    if (!text?.trim() && files.length === 0) return;
 
     await sendMessage(
       {
-        text,
+        text: text || '',
+        files, // AI SDK handles file attachments automatically
       },
       {
         body: {
           modelKey: model,
           webSearch,
+          sessionId,
         },
       }
     );
@@ -128,18 +177,37 @@ const ChatBotDemo = () => {
                                 onClick={() => regenerate()}
                                 label="Retry"
                               >
-                                <RefreshCcwIcon className="size-3" />
+                                <RefreshCcwIcon className="size-4" />
                               </MessageAction>
                               <MessageAction
-                                onClick={() =>
-                                  navigator.clipboard.writeText(part.text)
-                                }
+                                onClick={() => {
+                                  navigator.clipboard.writeText(part.text);
+                                  toast.success('Message copied to clipboard!');
+                                }}
                                 label="Copy"
                               >
-                                <CopyIcon className="size-3" />
+                                <CopyIcon className="size-4" />
                               </MessageAction>
                             </MessageActions>
                           )}
+                        </Message>
+                      );
+                    case 'file':
+                      return (
+                        <Message key={`${message.id}-${i}`} from={message.role}>
+                          <MessageContent>
+                            {(part as any).contentType?.startsWith('image/') ? (
+                              <img
+                                src={(part as any).url}
+                                alt={(part as any).name || 'Uploaded image'}
+                                className="max-w-md rounded-lg border"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2 p-3 border rounded-lg bg-muted/50">
+                                <span className="font-medium">{(part as any).name || 'File'}</span>
+                              </div>
+                            )}
+                          </MessageContent>
                         </Message>
                       );
                     case 'reasoning':
@@ -163,10 +231,10 @@ const ChatBotDemo = () => {
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
-        <PromptInput 
-          onSubmit={handleSubmit} 
-          className="mt-4" 
-          globalDrop 
+        <PromptInput
+          onSubmit={handleSubmit}
+          className="mt-4"
+          globalDrop
           multiple
         >
           <PromptInputHeader>
