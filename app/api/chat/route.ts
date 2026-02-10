@@ -3,6 +3,8 @@ import { providers } from './provider';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { tavilySearch } from '@tavily/ai-sdk';
+import { google } from '@ai-sdk/google';
+import { embed } from 'ai';
 
 export async function POST(req: NextRequest) {
   try {
@@ -133,9 +135,83 @@ export async function POST(req: NextRequest) {
     // Apply sliding window: keep last 20 messages (10 turns) + system prompts
     const truncatedMessages = applyMessageSlidingWindow(messages, 20);
 
+    // RAG ENHANCEMENT: Retrieve relevant document context
+    let enhancedMessages = truncatedMessages;
+    if (lastMessage && lastMessage.role === 'user') {
+      try {
+        // Extract text from last message (same logic as earlier)
+        let messageText = '';
+        if (lastMessage.parts && Array.isArray(lastMessage.parts)) {
+          messageText = lastMessage.parts
+            .filter((part: any) => part.type === 'text')
+            .map((part: any) => part.text)
+            .join(' ');
+        } else if (typeof lastMessage.content === 'string') {
+          messageText = lastMessage.content;
+        } else if (Array.isArray(lastMessage.content)) {
+          messageText = lastMessage.content
+            .map((part: any) => (typeof part === 'string' ? part : part.text || ''))
+            .join(' ');
+        } else if (lastMessage.content?.text) {
+          messageText = lastMessage.content.text;
+        }
+
+        if (messageText && messageText.trim().length > 0) {
+          // Generate embedding for user's message
+          const embeddingModel = google.textEmbeddingModel('text-embedding-004');
+          const { embedding } = await embed({
+            model: embeddingModel,
+            value: messageText,
+          });
+
+          // Search for relevant documents using match_documents RPC
+          const { data: relevantChunks, error: searchError } = await supabase.rpc(
+            'match_documents',
+            {
+              query_embedding: embedding,
+              match_threshold: 0.7,
+              match_count: 5,
+              filter_user_id: user.id,
+            }
+          );
+
+          if (!searchError && relevantChunks && relevantChunks.length > 0) {
+            // Format retrieved context
+            const contextText = relevantChunks
+              .map((chunk: any, idx: number) => {
+                return `[Document ${idx + 1}] (Similarity: ${(chunk.similarity * 100).toFixed(1)}%)\n${chunk.content}`;
+              })
+              .join('\n\n');
+
+            // Create enhanced system message with context
+            const ragSystemMessage = {
+              role: 'system',
+              content: `You are a helpful assistant. The user has uploaded documents to their knowledge base. Use the following context from their documents to answer their question. If the context is relevant, cite it in your answer. If the context is not relevant to the question, answer normally without mentioning the context.
+
+=== RETRIEVED CONTEXT ===
+${contextText}
+=== END OF CONTEXT ===
+
+Now answer the user's question based on the above context and your general knowledge.`,
+            };
+
+            // Inject RAG system message at the beginning
+            enhancedMessages = [ragSystemMessage, ...truncatedMessages];
+
+            console.log(`✅ RAG: Found ${relevantChunks.length} relevant chunks for query`);
+          } else {
+            console.log('ℹ️ RAG: No relevant documents found for query');
+          }
+        }
+      } catch (ragError) {
+        console.error('Error in RAG retrieval:', ragError);
+        // Continue without RAG context on error
+      }
+    }
+
     const result = await streamText({
       model,
-      messages: convertToModelMessages(truncatedMessages),
+      messages: convertToModelMessages(enhancedMessages),
       // Enable web search tool when user toggles search button
       tools: webSearch ? {
         webSearch: tavilySearch({

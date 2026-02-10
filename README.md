@@ -13,6 +13,7 @@ A modern SaaS template built with Next.js 15, Tailwind CSS v4, Shadcn UI v2, Ups
 - 🧩 **React Hook Form** - Flexible form validation
 - ⚙️ **Zod** - Schema validation
 - 🛡️ **Enhanced Security** - Robust authentication with rate limiting using Upstash
+- 📚 **RAG (Chat with Data)** - Upload and chat with PDF, DOCX, TXT, and Images using Google Gemini embeddings
 - 🔒 **Security Headers** - CSP and other security headers (Coming Soon)
 - 🚫 **Anti-Brute Force** - Protection against authentication attacks (Coming Soon)
 
@@ -62,6 +63,7 @@ supabase start
 ```
 
 > After the contianer starts, you will be provided with some credentials like the following example:
+>
 > ```
 >         API URL: http://127.0.0.1:54321
 >     GraphQL URL: http://127.0.0.1:54321/graphql/v1
@@ -76,7 +78,17 @@ supabase start
 >   S3 Secret Key: 850181e4652dd023b7a98c58ae0d2d34bd487ee0cc3254aed6eda37307425907
 >       S3 Region: local
 > ```
+>
 > **Copy those credentials from you terminal** and save them in your notes or create a `supabase-local-credentials.txt` file in this repo (it is already added to `.gitignore` so that it is not pushed into the repository.)
+
+#### Run RAG Migrations
+
+To enable vector search, you need to apply the RAG database schema:
+
+1. Go to your Supabase Dashboard (http://127.0.0.1:54323).
+2. Open the **SQL Editor**.
+3. Open the file `supabase/migrations/20251217_add_rag_columns.sql` from your project.
+4. Copy the content and run it in the SQL Editor.
 
 ### 4. Set up environment variables
 
@@ -99,6 +111,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxxxxxxx
 # Upstash
 UPSTASH_REDIS_REST_URL=xxxxxxxxx
 UPSTASH_REDIS_REST_TOKEN=xxxxxxxxx
+
+# RAG & AI (Google Gemini is required for RAG)
+GOOGLE_GENERATIVE_AI_API_KEY=xxxxxxxxx
+TAVILY_API_KEY=xxxxxxxxx # Optional, for web search
+# OPENAI_API_KEY=xxxxxxxxx # Optional, but Google is preferred for this RAG implementation
 ```
 
 ### 5. Run the development server
@@ -114,7 +131,48 @@ yarn dev
 
 Your application should now be running at [http://localhost:3000](http://localhost:3000).
 
+### 6. How to use RAG (Chat with Data)
+
+1. **Upload Documents**: Click the paperclip icon in the chat input area.
+2. **Select Files**: Choose PDF, Word (.docx), Text (.txt), or Image files.
+3. **Chat**: Once uploaded, ask questions about your documents. The AI will retrieve relevant context to answer.
+
+## RAG Architecture
+
+### Document Ingestion Flow
+
+```mermaid
+graph TD
+    A[User Uploads File] --> B[API: /api/process-document]
+    B --> C{File Type?}
+    C -- PDF/DOCX/TXT --> D[Extract Text]
+    C -- Image --> E[Gemini Vision Analysis]
+    D --> F[Chunk Text]
+    E --> F
+    F --> G[Generate Embeddings (Google/OpenAI)]
+    G --> H[Store in Supabase (pgvector)]
+```
+
+### Chat Retrieval Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as Chat API
+    participant DB as Supabase (Vector DB)
+    participant LLM as Google Gemini
+
+    User->>API: Send Message
+    API->>API: Generate Embedding for Query
+    API->>DB: match_documents(embedding)
+    DB-->>API: Return Relevant Chunks
+    API->>API: Inject Context into System Prompt
+    API->>LLM: Generate Response (Query + Context)
+    LLM-->>User: Stream Response
+```
+
 ## Some **Features**
+
 - Email/password authentication
 - Google OAuth integration
 - Strong password requirements
@@ -134,6 +192,10 @@ Your application should now be running at [http://localhost:3000](http://localho
 │   │   └── reset-password/
 │   ├── (public)/           # Public routes
 │   ├── (authenticated)/    # Protected routes
+│   │   └── chat/           # Chat interface
+│   ├── api/                # API Routes
+│   │   ├── chat/           # Chat API
+│   │   └── process-document/# RAG Ingestion API
 │   ├── actions/            # Server actions
 │   └── globals.css         # Global styles
 ├── assets/                 # Project assets
@@ -141,6 +203,7 @@ Your application should now be running at [http://localhost:3000](http://localho
 │   └── logos/              # Logo files
 ├── components/             # React components
 │   ├── ui/                 # Shadcn UI components
+│   ├── chat/               # Chat components
 │   ├── mode-toggle.tsx     # Dark/light mode toggle
 │   └── theme-provider.tsx  # Theme context provider
 ├── hooks/                  # Custom React hooks

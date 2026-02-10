@@ -49,6 +49,7 @@ import {
 } from '@/components/ai-elements/reasoning';
 import { Loader } from '@/components/ai-elements/loader';
 import { useParams, useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 const models = [
   { name: 'Gemini (flash)', value: 'gemini' },
@@ -114,10 +115,82 @@ const ChatBotDemo = () => {
 
     if (!text?.trim() && files.length === 0) return;
 
+    // Process files for RAG before sending message
+    if (files.length > 0) {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        // Process each file for RAG in the background
+        files.forEach(async (file) => {
+          try {
+            // Upload to Supabase Storage
+            // Use 'filename' and 'mediaType' from PromptInput's FileUIPart, fallback to 'name' and 'type' if standard File
+            const fileName = file.filename || file.name || `file-${Date.now()}`;
+            const fileType = file.mediaType || file.type || 'application/octet-stream';
+
+            const fileId = `${Date.now()}-${fileName}`;
+            const filePath = `${user.id}/${fileId}`;
+
+            // Helper to convert data URL or blob URL to Blob for upload
+            let blobToUpload = file;
+            if (!(file instanceof File) && !(file instanceof Blob)) {
+              // If it's a FileUIPart, we might need to fetch the blob from the URL
+              if (file.url) {
+                const blobRes = await fetch(file.url);
+                blobToUpload = await blobRes.blob();
+              }
+            }
+
+            const { error: uploadError } = await supabase.storage
+              .from('documents')
+              .upload(filePath, blobToUpload, {
+                contentType: fileType,
+              });
+
+            if (uploadError) {
+              console.error('Error uploading file for RAG:', uploadError);
+              toast.error(`Upload failed: ${uploadError.message}`);
+              return;
+            }
+
+            // Process document for RAG
+            // Remove debug payload log
+            const response = await fetch('/api/process-document', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                filePath,
+                fileName: fileName,
+                fileType: fileType,
+              }),
+            });
+
+            const result = await response.json();
+            if (response.ok) {
+              console.log(`✅ RAG: Processed ${fileName} - ${result.chunksProcessed} chunks created`);
+              toast.success(`${fileName} added to your knowledge base!`);
+            } else {
+              console.error('Error processing document:', result.error);
+              toast.error(`Failed to process ${fileName}: ${result.error}`);
+            }
+          } catch (error) {
+            console.error('Error in RAG processing:', error);
+          }
+        });
+      }
+    }
+
+    // Filter files: Only send images to LLM (for multimodal vision)
+    // Other files (PDFs, Word docs, etc.) only go to RAG, not to LLM
+    const imageFiles = files.filter((file: File) => file.type.startsWith('image/'));
+
     await sendMessage(
       {
         text: text || '',
-        files, // AI SDK handles file attachments automatically
+        files: imageFiles, // Only images for multimodal vision, others are RAG-only
       },
       {
         body: {
