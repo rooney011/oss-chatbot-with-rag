@@ -143,14 +143,14 @@ Your application should now be running at [http://localhost:3000](http://localho
 
 ```mermaid
 graph TD
-    A[User Uploads File] --> B[API: /api/process-document]
-    B --> C{File Type?}
-    C -- PDF/DOCX/TXT --> D[Extract Text]
-    C -- Image --> E[Gemini Vision Analysis]
-    D --> F[Chunk Text]
+    A["User Uploads File"] --> B["API: /api/process-document"]
+    B --> C{"File Type?"}
+    C -- "PDF/DOCX/TXT" --> D["Extract Text"]
+    C -- "Image" --> E["Gemini Vision Analysis"]
+    D --> F["Chunk Text"]
     E --> F
-    F --> G[Generate Embeddings (Google/OpenAI)]
-    G --> H[Store in Supabase (pgvector)]
+    F --> G["Generate Embeddings (Google/OpenAI)"]
+    G --> H["Store in Supabase (pgvector)"]
 ```
 
 ### Chat Retrieval Flow
